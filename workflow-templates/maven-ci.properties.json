@@ -1,0 +1,10 @@
+{
+  "name": "Java CI with Maven",
+  "description": "Run build and tests with maven",
+  "categories": [
+    "Java"
+  ],
+  "filePatterns": [
+    "pom.xml$"
+  ]
+}

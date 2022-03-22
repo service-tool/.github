@@ -1,0 +1,11 @@
+{
+  "name": "Maven to docker",
+  "description": "Release to git and push docker image to registry",
+  "categories": [
+    "Java"
+  ],
+  "filePatterns": [
+    "pom.xml$",
+    "^Dockerfile"
+  ]
+}

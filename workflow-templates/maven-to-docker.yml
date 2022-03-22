@@ -1,0 +1,72 @@
+name: Release to git and push docker image to registry
+
+on:
+  push:
+    branches: [ $default-branch ]
+
+jobs:
+  build:
+    name: Package & Deploy
+    runs-on: ubuntu-latest
+    timeout-minutes: 25
+    steps:
+      - name: Cancel Previous Runs
+        uses: styfle/cancel-workflow-action@0.6.0
+        with:
+          access_token: ${{ github.token }}
+
+      - uses: actions/checkout@v2
+      - name: Set up JDK 17
+        uses: actions/setup-java@v2
+        with:
+          java-version: '17'
+          distribution: 'temurin'
+          cache: maven
+          server-id: github
+
+      - name: Cache local Maven repository
+        uses: actions/cache@v2
+        with:
+          path: ~/.m2
+          key: ${{ runner.os }}-maven-${{ hashFiles('**/pom.xml') }}
+          restore-keys: |
+            ${{ runner.os }}-maven-
+
+      - name: Configure Git user
+        run: |
+          git config user.email "actions@github.com"
+          git config user.name "GitHub Actions"
+
+      - name: Tag release in git
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: mvn -B release:prepare -Darguments="-Dmaven.javadoc.skip=true"
+
+      - name: Checkout latest release tag
+        id: latest_tag
+        run: |
+          LATEST_TAG=$(git describe --tags --abbrev=0)
+          echo "::set-output name=release_tag::$LATEST_TAG"
+          echo $LATEST_TAG
+
+      - name: Login to Azure CR
+        id: login-acr
+        uses: azure/docker-login@v1
+        with:
+          login-server: ${{ secrets.ACR_REGISTRY }}
+          username: ${{ secrets.ACR_USERNAME }}
+          password: ${{ secrets.ACR_PASSWORD }}
+
+      - name: Build & Push Image
+        id: build-image
+        env:
+          REPO_NAME: ${{ github.event.repository.name }}
+          DOCKER_BUILDKIT: 1
+          ACR_REGISTRY: ${{ secrets.ACR_REGISTRY }}
+          ECR_REPOSITORY: app-repo
+          IMAGE_TAG: ${{ steps.latest_tag.outputs.release_tag }}
+        run: |
+          docker build -t $ACR_REGISTRY/$REPO_NAME:latest -t $ACR_REGISTRY/$REPO_NAME:$IMAGE_TAG .
+          docker push $ACR_REGISTRY/$REPO_NAME:$IMAGE_TAG
+          docker push $ACR_REGISTRY/$REPO_NAME:latest
+          echo "::set-output name=image::$ACR_REGISTRY/$REPO_NAME:$IMAGE_TAG"
