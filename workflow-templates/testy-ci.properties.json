@@ -1,0 +1,8 @@
+{
+  "name": "Testy CI",
+  "description": "Prints hello world",
+  "categories": [ "Java" ],
+  "filePatterns": [
+    "pom.xml$"
+  ]
+}
