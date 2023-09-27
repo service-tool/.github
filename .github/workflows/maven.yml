@@ -1,0 +1,32 @@
+
+name: Maven CI Build
+
+on:
+  workflow_call:
+    inputs:
+      java-version:
+        required: false
+        type: number
+        default: 18
+    secrets:
+      GH_PACKAGES_USERNAME:
+        required: true
+      GH_PACKAGES_PAT:
+        required: true
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v3
+      - name: Set up JDK ${{ inputs.java-version }}
+        uses: actions/setup-java@v3
+        with:
+          java-version: ${{ inputs.java-version }}
+          distribution: "temurin"
+          cache: maven
+      - name: Build with Maven
+        run: mvn -s $GITHUB_WORKSPACE/.github/m2/settings.xml -B package --file pom.xml
+        env:
+          USER_NAME: ${{ secrets.GH_PACKAGES_USERNAME }}
+          ACCESS_TOKEN: ${{ secrets.GH_PACKAGES_PAT }}
