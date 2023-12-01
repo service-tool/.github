@@ -13,125 +13,121 @@ runs:
   env:
     DEPLOY_ENV: ${{ inputs.environment }}
   steps:
-    name: Package & Deploy
-    runs-on: ubuntu-latest
-    timeout-minutes: 25
-    steps:
-      - name: Cancel Previous Runs
-        uses: styfle/cancel-workflow-action@0.12.0
-        with:
-          access_token: ${{ github.token }}
+    - name: Cancel Previous Runs
+      uses: styfle/cancel-workflow-action@0.12.0
+      with:
+        access_token: ${{ github.token }}
 
-      - name: Use dev as default environment
-        run: |
-          echo  "DEPLOY_ENV=dev" >> $GITHUB_ENV
-        if: env.DEPLOY_ENV == null
+    - name: Use dev as default environment
+      run: |
+        echo  "DEPLOY_ENV=dev" >> $GITHUB_ENV
+      if: env.DEPLOY_ENV == null
 
-      - uses: actions/checkout@v4
-      - name: Set up JDK 21
-        uses: actions/setup-java@v3
-        with:
-          java-version: "21"
-          distribution: "temurin"
-          cache: maven
-          server-id: github
+    - uses: actions/checkout@v4
+    - name: Set up JDK 21
+      uses: actions/setup-java@v3
+      with:
+        java-version: "21"
+        distribution: "temurin"
+        cache: maven
+        server-id: github
 
-      - name: Configure Git user
-        run: |
-          git config user.email "actions@github.com"
-          git config user.name "GitHub Actions"
+    - name: Configure Git user
+      run: |
+        git config user.email "actions@github.com"
+        git config user.name "GitHub Actions"
 
-      - name: Tag release in git
-        env:
-          USER_NAME: ${{ secrets.GH_PACKAGES_USERNAME }}
-          ACCESS_TOKEN: ${{ secrets.GH_PACKAGES_PAT }}
-          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-        run: mvn  -s m2/settings.xml -B release:prepare -Darguments="-Dmaven.javadoc.skip=true"
-        if: env.DEPLOY_ENV == 'test'
+    - name: Tag release in git
+      env:
+        USER_NAME: ${{ secrets.GH_PACKAGES_USERNAME }}
+        ACCESS_TOKEN: ${{ secrets.GH_PACKAGES_PAT }}
+        GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+      run: mvn  -s m2/settings.xml -B release:prepare -Darguments="-Dmaven.javadoc.skip=true"
+      if: env.DEPLOY_ENV == 'test'
 
-      - name: Checkout latest release tag
-        id: latest_tag
-        run: |
-          TAG=$(git describe --tags --abbrev=0)
-          echo "release_tag=$TAG" >> $GITHUB_OUTPUT
-          echo $TAG
-        if: env.DEPLOY_ENV == 'test'
+    - name: Checkout latest release tag
+      id: latest_tag
+      run: |
+        TAG=$(git describe --tags --abbrev=0)
+        echo "release_tag=$TAG" >> $GITHUB_OUTPUT
+        echo $TAG
+      if: env.DEPLOY_ENV == 'test'
 
-      - name: Build with Maven
-        run: mvn -s m2/settings.xml -B package
-        env:
-          USER_NAME: ${{ secrets.GH_PACKAGES_USERNAME }}
-          ACCESS_TOKEN: ${{ secrets.GH_PACKAGES_PAT }}
-        if: env.DEPLOY_ENV == 'dev'
+    - name: Build with Maven
+      run: mvn -s m2/settings.xml -B package
+      env:
+        USER_NAME: ${{ secrets.GH_PACKAGES_USERNAME }}
+        ACCESS_TOKEN: ${{ secrets.GH_PACKAGES_PAT }}
+      if: env.DEPLOY_ENV == 'dev'
 
-      - name: Set build tag
-        id: build_tag
-        run: |
-          TAG="$(date +"%s")"
-          echo "build_tag=$TAG" >> $GITHUB_OUTPUT
-          echo "TAG: $TAG"
-        if: env.DEPLOY_ENV == 'dev'
+    - name: Set build tag
+      id: build_tag
+      run: |
+        TAG="$(date +"%s")"
+        echo "build_tag=$TAG" >> $GITHUB_OUTPUT
+        echo "TAG: $TAG"
+      if: env.DEPLOY_ENV == 'dev'
 
-      - name: Login to Azure
-        id: login
-        uses: azure/login@v1
-        with:
-          creds: ${{ secrets.AZURE_CREDENTIALS }}
+    - name: Login to Azure
+      id: login
+      uses: azure/login@v1
+      with:
+        creds: ${{ secrets.AZURE_CREDENTIALS }}
 
-      - name: Login to Azure CR
-        id: login-acr
-        uses: azure/docker-login@v1
-        with:
-          login-server: ${{ secrets.ACR_REGISTRY }}
-          username: ${{ secrets.ACR_USERNAME }}
-          password: ${{ secrets.ACR_PASSWORD }}
+    - name: Login to Azure CR
+      id: login-acr
+      uses: azure/docker-login@v1
+      with:
+        login-server: ${{ secrets.ACR_REGISTRY }}
+        username: ${{ secrets.ACR_USERNAME }}
+        password: ${{ secrets.ACR_PASSWORD }}
 
-      - name: Build & Push Dev Image
-        id: build-image-dev
-        env:
-          REPO_NAME: ${{ github.event.repository.name }}
-          DOCKER_BUILDKIT: 1
-          ACR_REGISTRY: ${{ secrets.ACR_REGISTRY }}
-          ECR_REPOSITORY: app-repo
-          IMAGE_TAG: ${{ steps.build_tag.outputs.build_tag }}
-        run: |
-          docker build -t $ACR_REGISTRY/$REPO_NAME:latest-dev -t $ACR_REGISTRY/$REPO_NAME:${IMAGE_TAG}-dev .
-          docker push $ACR_REGISTRY/$REPO_NAME:${IMAGE_TAG}-dev
-          docker push $ACR_REGISTRY/$REPO_NAME:latest-dev
-          echo "image=$ACR_REGISTRY/$REPO_NAME:${IMAGE_TAG}-dev" >> $GITHUB_OUTPUT
-        if: env.DEPLOY_ENV == 'dev'
+    - name: Build & Push Dev Image
+      id: build-image-dev
+      env:
+        REPO_NAME: ${{ github.event.repository.name }}
+        DOCKER_BUILDKIT: 1
+        ACR_REGISTRY: ${{ secrets.ACR_REGISTRY }}
+        ECR_REPOSITORY: app-repo
+        IMAGE_TAG: ${{ steps.build_tag.outputs.build_tag }}
+      run: |
+        docker build -t $ACR_REGISTRY/$REPO_NAME:latest-dev -t $ACR_REGISTRY/$REPO_NAME:${IMAGE_TAG}-dev .
+        docker push $ACR_REGISTRY/$REPO_NAME:${IMAGE_TAG}-dev
+        docker push $ACR_REGISTRY/$REPO_NAME:latest-dev
+        echo "image=$ACR_REGISTRY/$REPO_NAME:${IMAGE_TAG}-dev" >> $GITHUB_OUTPUT
+      if: env.DEPLOY_ENV == 'dev'
 
-      - name: Build & Push Test Image
-        id: build-image-test
-        env:
-          REPO_NAME: ${{ github.event.repository.name }}
-          DOCKER_BUILDKIT: 1
-          ACR_REGISTRY: ${{ secrets.ACR_REGISTRY }}
-          ECR_REPOSITORY: app-repo
-          IMAGE_TAG: ${{ steps.latest_tag.outputs.release_tag }}
-        run: |
-          docker build -t $ACR_REGISTRY/$REPO_NAME:latest -t $ACR_REGISTRY/$REPO_NAME:$IMAGE_TAG .
-          docker push $ACR_REGISTRY/$REPO_NAME:$IMAGE_TAG
-          docker push $ACR_REGISTRY/$REPO_NAME:latest
-          echo "image=$ACR_REGISTRY/$REPO_NAME:$IMAGE_TAG" >> $GITHUB_OUTPUT
-        if: env.DEPLOY_ENV == 'test'
+    - name: Build & Push Test Image
+      id: build-image-test
+      env:
+        REPO_NAME: ${{ github.event.repository.name }}
+        DOCKER_BUILDKIT: 1
+        ACR_REGISTRY: ${{ secrets.ACR_REGISTRY }}
+        ECR_REPOSITORY: app-repo
+        IMAGE_TAG: ${{ steps.latest_tag.outputs.release_tag }}
+      run: |
+        docker build -t $ACR_REGISTRY/$REPO_NAME:latest -t $ACR_REGISTRY/$REPO_NAME:$IMAGE_TAG .
+        docker push $ACR_REGISTRY/$REPO_NAME:$IMAGE_TAG
+        docker push $ACR_REGISTRY/$REPO_NAME:latest
+        echo "image=$ACR_REGISTRY/$REPO_NAME:$IMAGE_TAG" >> $GITHUB_OUTPUT
+      if: env.DEPLOY_ENV == 'test'
 
-      - name: Deploy dev Azure Web App
-        id: deploy-to-webapp-dev
-        uses: azure/webapps-deploy@v3
-        with:
-          app-name: ${{ inputs.app-name }}-dev
-          images: "${{secrets.ACR_REGISTRY}}/${{ github.event.repository.name }}:${{ steps.build_tag.outputs.build_tag }}-dev"
-        if: env.DEPLOY_ENV == 'dev'
+    - name: Deploy dev Azure Web App
+      id: deploy-to-webapp-dev
+      uses: azure/webapps-deploy@v3
+      with:
+        app-name: ${{ inputs.app-name }}-dev
+        images: "${{secrets.ACR_REGISTRY}}/${{ github.event.repository.name }}:${{ steps.build_tag.outputs.build_tag }}-dev"
+      if: env.DEPLOY_ENV == 'dev'
 
-      - name: Deploy test Azure Web App
-        id: deploy-to-webapp-test
-        uses: azure/webapps-deploy@v3
-        with:
-          app-name: ${{ inputs.app-name }}-test
-          images: "${{secrets.ACR_REGISTRY}}/${{ github.event.repository.name }}:${{ steps.latest_tag.outputs.release_tag }}"
-        if: env.DEPLOY_ENV == 'test'
+    - name: Deploy test Azure Web App
+      id: deploy-to-webapp-test
+      uses: azure/webapps-deploy@v3
+      with:
+        app-name: ${{ inputs.app-name }}-test
+        images: "${{secrets.ACR_REGISTRY}}/${{ github.event.repository.name }}:${{ steps.latest_tag.outputs.release_tag }}"
+      if: env.DEPLOY_ENV == 'test'
 
-      # Azure logout
-      - name: logout
-        run: az logout
+    # Azure logout
+    - name: logout
+      run: az logout
